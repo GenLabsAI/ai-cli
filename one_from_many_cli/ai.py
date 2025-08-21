@@ -139,3 +139,9 @@ def dynamoe_run(
     print()
 
 app.add_typer(dynamoe_app, name="dynamoe")
+
+def main():
+    app()
+
+if __name__ == "__main__":
+    main()
