@@ -1,0 +1,4 @@
+[console_scripts]
+ai = one_from_many_cli.ai:main
+genlabs = one_from_many_cli.genlabs:main
+gl = one_from_many_cli.genlabs:main

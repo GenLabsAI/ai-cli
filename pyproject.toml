@@ -1,0 +1,29 @@
+[project]
+name = "one-from-many-cli"
+version = "0.2.0"
+description = "One-from-many inference CLI with expert selection, dry download, and OpenAI-compatible server"
+requires-python = ">=3.9"
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.7.0",
+    "huggingface_hub>=0.23.0",
+    "transformers>=4.42.0",
+    "accelerate>=0.33.0",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.1",
+    "orjson>=3.10.12",
+    "psutil>=5.9.8",
+    "safetensors>=0.4.3"
+    # Optional: bitsandbytes (if you want 8/4-bit quantization) -> install separately if supported
+    # pip install bitsandbytes
+]
+
+[project.scripts]
+ai = "one_from_many_cli.ai:main"
+genlabs = "one_from_many_cli.genlabs:main"
+gl = "one_from_many_cli.genlabs:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: one-from-many-cli
+Version: 0.2.0
+Summary: One-from-many inference CLI with expert selection, dry download, and OpenAI-compatible server
+Requires-Python: >=3.9
+Requires-Dist: typer>=0.9.0
+Requires-Dist: rich>=13.7.0
+Requires-Dist: huggingface_hub>=0.23.0
+Requires-Dist: transformers>=4.42.0
+Requires-Dist: accelerate>=0.33.0
+Requires-Dist: fastapi>=0.111.0
+Requires-Dist: uvicorn[standard]>=0.30.0
+Requires-Dist: pydantic>=2.7.1
+Requires-Dist: orjson>=3.10.12
+Requires-Dist: psutil>=5.9.8
+Requires-Dist: safetensors>=0.4.3

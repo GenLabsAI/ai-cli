@@ -1,0 +1,11 @@
+typer>=0.9.0
+rich>=13.7.0
+huggingface_hub>=0.23.0
+transformers>=4.42.0
+accelerate>=0.33.0
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.1
+orjson>=3.10.12
+psutil>=5.9.8
+safetensors>=0.4.3
