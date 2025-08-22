@@ -58,17 +58,15 @@ def hf_login(token: Optional[str] = typer.Option(None, "--token", envvar="HF_TOK
 
 app.add_typer(hf_app, name="hf")
 
-# Separate download command (now supports --token)
+# Separate download command
 @dynamoe_app.command("download")
 def dynamoe_download(
     model: str = typer.Argument("deca-ai/3-alpha-ultra"),
-    dry: bool = typer.Option(False, "--dry", help="Dry mode: create empty placeholder files instead of downloading shards"),
-    token: Optional[str] = typer.Option(None, "--token", envvar="HF_TOKEN", help="Hugging Face token for gated repos"),
 ):
     if not is_dynamoe_installed():
         console.print("[yellow]dynamoe not installed. Installing now...[/]")
         install_dynamoe()
-    download_experts(model, dry=dry, token=token)
+    download_experts(model)
     show_installed(model)
 
 @dynamoe_app.command("run")
