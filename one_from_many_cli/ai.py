@@ -62,11 +62,12 @@ app.add_typer(hf_app, name="hf")
 @dynamoe_app.command("download")
 def dynamoe_download(
     model: str = typer.Argument("deca-ai/3-alpha-ultra"),
+    dry: bool = typer.Option(False, "--dry", help="Dry mode: create empty placeholder files instead of downloading shards"),
 ):
     if not is_dynamoe_installed():
         console.print("[yellow]dynamoe not installed. Installing now...[/]")
         install_dynamoe()
-    download_experts(model)
+    download_experts(model, dry=dry)
     show_installed(model)
 
 @dynamoe_app.command("run")
