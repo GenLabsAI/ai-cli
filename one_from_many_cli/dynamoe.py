@@ -1,10 +1,12 @@
 from __future__ import annotations
-import base64
+import json
 from pathlib import Path
 from typing import List, Optional
 
 from rich.console import Console
-from huggingface_hub import hf_hub_download
+from rich.table import Table
+from rich.prompt import Prompt
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from huggingface_hub.errors import HfHubHTTPError
 
 from .utils import (
@@ -12,68 +14,117 @@ from .utils import (
     get_experts_root,
     record_installed_experts,
     list_installed_experts,
-    APP_DIR,
 )
-from .auth import ensure_hf_login_interactive
+from .hf_utils import (
+    list_experts,
+    download_expert_folder,
+    parse_index_and_collect_shards,
+    rewrite_index_to_local,
+    download_shards_and_root_files,
+    find_expert_index_file,
+)
+from .auth import ensure_hf_login_interactive, get_saved_token
 
 console = Console()
 
-def download_experts(model_id: str):
+def pick_experts_interactively(all_experts: List[str]) -> List[str]:
+    table = Table(title="Available experts", show_lines=False)
+    table.add_column("#", style="bold")
+    table.add_column("Expert")
+    for i, ex in enumerate(all_experts, start=1):
+        table.add_row(str(i), ex)
+    console.print(table)
+    ans = Prompt.ask("Select experts to download (e.g. 1,3-5 or 'all')", default="all")
+    ans = ans.strip().lower()
+    if ans in ("all", "a", "*"):
+        return all_experts
+    selected: List[str] = []
+    parts = [p.strip() for p in ans.replace(" ", "").split(",") if p.strip()]
+    for p in parts:
+        if "-" in p:
+            s, e = p.split("-", 1)
+            s_i = int(s); e_i = int(e)
+            for i in range(s_i, e_i + 1):
+                if 1 <= i <= len(all_experts):
+                    selected.append(all_experts[i-1])
+        else:
+            i = int(p)
+            if 1 <= i <= len(all_experts):
+                selected.append(all_experts[i-1])
+    seen = set()
+    out = []
+    for x in selected:
+        if x not in seen:
+            out.append(x)
+            seen.add(x)
+    return out
+
+def download_experts(model_id: str, dry: bool = False, token: Optional[str] = None):
     model_id = canonical_model_id(model_id)
     repo_id = "deca-ai/3-ultra-alpha"
-    console.print(f"[bold]Loading experts for[/] {model_id} from .dynamoeconfig on {repo_id}")
+    console.print(f"[bold]Preparing experts for[/] {repo_id} {'(dry mode)' if dry else ''}")
 
+    # Try without token first; if gated (401/403), prompt and retry
+    experts = []
     try:
-        config_path = hf_hub_download(repo_id=repo_id, filename=".dynamoeconfig")
+        experts = list_experts(repo_id, token=token or get_saved_token())
     except HfHubHTTPError as e:
-        if e.response.status_code in (401, 403):
+        status = getattr(e.response, "status_code", None)
+        if status in (401, 403):
             console.print("[yellow]Repository is gated. A Hugging Face token is required.[/]")
-            ensure_hf_login_interactive()
-            config_path = hf_hub_download(repo_id=repo_id, filename=".dynamoeconfig")
+            token = ensure_hf_login_interactive()
+            experts = list_experts(repo_id, token=token)
         else:
-            console.print(f"[red]Error downloading .dynamoeconfig: {e}[/]")
-            return
+            raise
 
-    experts_root = get_experts_root(model_id)
-    experts_root.mkdir(parents=True, exist_ok=True)
+    if not experts:
+        console.print("[red]No experts found on the repo.[/]")
+        return
 
-    with open(config_path, 'rb') as input_file:
-        data = input_file.read().decode()
-        files_data = data.split("\n\n")  # Files are separated by two newlines
+    selected = pick_experts_interactively(experts)
+    if not selected:
+        console.print("[yellow]No experts selected. Nothing to do.[/]")
+        return
 
-        installed_experts = set()
-        for file_data in files_data:
-            if not file_data.strip():
-                continue
-            file_lines = file_data.split("\n")
-            file_name = file_lines[0]
-            encoded_content = "".join(file_lines[1:])
+    dest_root = get_experts_root(model_id)
+    downloaded = []
 
-            try:
-                decoded_data = base64.b64decode(encoded_content)
-            except (base64.binascii.Error, ValueError) as e:
-                console.print(f"[red]Error decoding base64 for {file_name}: {e}[/]")
-                continue
+    for expert in selected:
+        dest_expert = dest_root / expert
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as prog:
+            prog.add_task(f"Downloading folder experts/{expert}...", total=None)
+            download_expert_folder(repo_id, expert, dest_expert, token=token or get_saved_token())
 
-            file_path = experts_root / file_name
+        index_path = find_expert_index_file(dest_expert)
+        if not index_path:
+            console.print(f"[red]Missing index for {expert}. Expected model(s).safetensors.index.json[/]")
+            continue
 
-            parent_dir = file_path.parent
-            parent_dir.mkdir(parents=True, exist_ok=True)
+        idx_data, shard_rel_paths = parse_index_and_collect_shards(index_path)
 
-            with open(file_path, 'wb') as f:
-                f.write(decoded_data)
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as prog:
+            msg = "Creating placeholders for shards..." if dry else "Fetching referenced shards..."
+            prog.add_task(f"{msg} ({expert})", total=None)
+            download_shards_and_root_files(
+                repo_id,
+                expert,
+                shard_rel_paths,
+                dest_expert,
+                dry=dry,
+                token=token or get_saved_token(),
+            )
 
-            expert_name = file_name.split('/')[0]
-            if expert_name.startswith("expert_"):
-                installed_experts.add(expert_name)
+        new_index = rewrite_index_to_local(idx_data)
+        index_path.write_text(json.dumps(new_index, indent=2))
 
-    if installed_experts:
-        installed_experts_list = sorted(list(installed_experts))
-        record_installed_experts(model_id, installed_experts_list)
-        console.print(f"[bold green]Done.[/] Installed experts: {', '.join(installed_experts_list)}")
+        downloaded.append(expert)
+        console.print(f"[green]Prepared {expert}[/] at {dest_expert}")
+
+    if downloaded:
+        record_installed_experts(model_id, downloaded)
+        console.print(f"[bold green]Done.[/] Installed experts: {', '.join(downloaded)}")
     else:
-        console.print("[yellow]No experts found in .dynamoeconfig.[/]")
-
+        console.print("[yellow]Nothing installed.[/]")
 
 def show_installed(model_id: str):
     model_id = canonical_model_id(model_id)
